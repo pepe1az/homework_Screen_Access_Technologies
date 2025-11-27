@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Проверка доступности</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 1.5rem;
+      background: #111827;
+      color: #e5e7eb;
+    }
+    h1 {
+      margin-top: 0;
+      margin-bottom: 1rem;
+    }
+    form {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    input[type="url"] {
+      min-width: 260px;
+      flex: 1;
+      padding: 0.5rem 0.75rem;
+      border-radius: 0.5rem;
+      border: 1px solid #374151;
+      background: #020617;
+      color: #e5e7eb;
+    }
+    button {
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      border: none;
+      cursor: pointer;
+      font-weight: 500;
+      background: #22c55e;
+      color: #022c22;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    .status {
+      margin-bottom: 1rem;
+      font-size: 0.95rem;
+    }
+    .status.error {
+      color: #fca5a5;
+    }
+    .status.ok {
+      color: #a7f3d0;
+    }
+    .summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .summary-chip {
+      padding: 0.35rem 0.7rem;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      background: #020617;
+      border: 1px solid #374151;
+    }
+    .impact-critical   { border-color: #f97373; color: #fecaca; }
+    .impact-serious    { border-color: #fb923c; color: #fed7aa; }
+    .impact-moderate   { border-color: #eab308; color: #fef9c3; }
+    .impact-minor      { border-color: #38bdf8; color: #bae6fd; }
+
+    .violations {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .violation-card {
+      border-radius: 0.75rem;
+      border: 1px solid #1f2937;
+      padding: 0.75rem 1rem;
+      background: #020617;
+    }
+    .violation-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 0.5rem;
+      margin-bottom: 0.35rem;
+    }
+    .violation-title {
+      font-weight: 600;
+      font-size: 0.98rem;
+    }
+    .impact-badge {
+      font-size: 0.75rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      border: 1px solid currentColor;
+      white-space: nowrap;
+    }
+    .violation-meta {
+      font-size: 0.85rem;
+      margin-bottom: 0.35rem;
+    }
+    .violation-meta a {
+      color: #7dd3fc;
+    }
+    .nodes {
+      margin-top: 0.35rem;
+      border-top: 1px solid #1f2937;
+      padding-top: 0.4rem;
+    }
+    .node {
+      margin-bottom: 0.4rem;
+      font-size: 0.85rem;
+    }
+    .node-html {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      background: #020617;
+      border-radius: 0.4rem;
+      padding: 0.3rem 0.4rem;
+      border: 1px solid #1f2937;
+      overflow-x: auto;
+      white-space: pre;
+      margin-bottom: 0.2rem;
+    }
+    .node-summary {
+      white-space: pre-line;
+      color: #e5e7eb;
+    }
+    .no-violations {
+      padding: 0.8rem 1rem;
+      border-radius: 0.75rem;
+      border: 1px solid #16a34a;
+      background: #022c22;
+      color: #bbf7d0;
+      font-size: 0.95rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Проверка доступности сайта</h1>
+
+<form id="audit-form">
+  <input
+    type="url"
+    id="url-input"
+    aria-label="Вставьте ссылку на сайт для проверки доступности"
+    placeholder="https://example.com"
+    required
+  />
+  <button type="submit" id="check-btn">Проверить</button>
+</form>
+
+
+
+  <div id="status" class="status"></div>
+
+  <div id="summary" class="summary"></div>
+
+  <div id="violations" class="violations"></div>
+
+  <script>
+    const form = document.getElementById("audit-form");
+    const input = document.getElementById("url-input");
+    const btn = document.getElementById("check-btn");
+    const statusEl = document.getElementById("status");
+    const summaryEl = document.getElementById("summary");
+    const violationsEl = document.getElementById("violations");
+
+    const impactLabels = {
+      critical: "критично",
+      serious: "серьёзно",
+      moderate: "умеренно важно",
+      minor: "незначительно",
+    };
+
+    function setStatus(text, type) {
+      statusEl.textContent = text || "";
+      statusEl.className = "status" + (type ? " " + type : "");
+    }
+
+    function renderSummary(data) {
+      summaryEl.innerHTML = "";
+      if (!data || !Array.isArray(data.violations)) return;
+
+      const counts = {
+        critical: 0,
+        serious: 0,
+        moderate: 0,
+        minor: 0,
+      };
+
+      for (const v of data.violations) {
+        const imp = (v.impact || "").toLowerCase();
+        if (counts.hasOwnProperty(imp)) {
+          counts[imp]++;
+        }
+      }
+
+      const total = data.violations.length;
+
+      if (total === 0) {
+        summaryEl.innerHTML = "";
+        return;
+      }
+
+      const totalChip = document.createElement("div");
+      totalChip.className = "summary-chip";
+      totalChip.textContent = `Всего нарушений: ${total}`;
+      summaryEl.appendChild(totalChip);
+
+      for (const [impact, count] of Object.entries(counts)) {
+        if (!count) continue;
+        const chip = document.createElement("div");
+        chip.className = `summary-chip impact-${impact}`;
+        chip.textContent = `${impactLabels[impact]}: ${count}`;
+        summaryEl.appendChild(chip);
+      }
+    }
+
+    function renderViolations(data) {
+      violationsEl.innerHTML = "";
+
+      const violations = data?.violations || [];
+
+      if (!violations.length) {
+        const div = document.createElement("div");
+        div.className = "no-violations";
+        div.textContent = "axe-core не нашёл нарушений доступности на этой странице.";
+        violationsEl.appendChild(div);
+        return;
+      }
+
+      for (const v of violations) {
+        const card = document.createElement("div");
+        card.className = "violation-card";
+
+        const header = document.createElement("div");
+        header.className = "violation-header";
+
+        const title = document.createElement("div");
+        title.className = "violation-title";
+        title.textContent = v.help || v.description || v.id || "Нарушение";
+
+        const impact = (v.impact || "").toLowerCase();
+        const badge = document.createElement("div");
+        badge.className = "impact-badge";
+        if (impact && impactLabels[impact]) {
+          badge.classList.add(`impact-${impact}`);
+          badge.textContent = impactLabels[impact];
+        } else {
+          badge.textContent = "без оценки";
+        }
+
+        header.appendChild(title);
+        header.appendChild(badge);
+        card.appendChild(header);
+
+        const meta = document.createElement("div");
+        meta.className = "violation-meta";
+        const desc = v.description || "";
+        const id = v.id ? `(${v.id})` : "";
+
+        meta.innerHTML = `
+          <div>${desc} <span style="opacity:0.7">${id}</span></div>
+          ${v.helpUrl ? `<div><a href="${v.helpUrl}" target="_blank" rel="noopener noreferrer">Подробнее о правиле</a></div>` : ""}
+        `;
+        card.appendChild(meta);
+
+        const nodes = v.nodes || [];
+        if (nodes.length) {
+          const nodesWrap = document.createElement("div");
+          nodesWrap.className = "nodes";
+
+          nodes.forEach((n, idx) => {
+            const nodeEl = document.createElement("div");
+            nodeEl.className = "node";
+
+            const html = (n.html || "").trim();
+            if (html) {
+              const htmlPre = document.createElement("pre");
+              htmlPre.className = "node-html";
+              htmlPre.textContent = html;
+              nodeEl.appendChild(htmlPre);
+            }
+
+            const summary = document.createElement("div");
+            summary.className = "node-summary";
+            summary.textContent = n.failureSummary || "См. подробности правила по ссылке выше.";
+            nodeEl.appendChild(summary);
+
+            nodesWrap.appendChild(nodeEl);
+          });
+
+          card.appendChild(nodesWrap);
+        }
+
+        violationsEl.appendChild(card);
+      }
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const url = input.value.trim();
+      if (!url) return;
+
+      setStatus("Проверяем страницу…", "");
+      summaryEl.innerHTML = "";
+      violationsEl.innerHTML = "";
+      btn.disabled = true;
+
+      try {
+        const resp = await fetch("/api/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          const msg = data?.detail || "Ошибка при проверке";
+          setStatus(msg, "error");
+          return;
+        }
+
+        setStatus(`Проверка выполнена для ${data.url}`, "ok");
+        renderSummary(data);
+        renderViolations(data);
+      } catch (err) {
+        console.error(err);
+        setStatus("Не удалось выполнить запрос к серверу", "error");
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
